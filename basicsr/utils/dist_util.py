@@ -19,10 +19,14 @@ def init_dist(launcher, backend='nccl', **kwargs):
 
 
 def _init_dist_pytorch(backend, **kwargs):
-    rank = int(os.environ['RANK'])
-    num_gpus = torch.cuda.device_count()
-    torch.cuda.set_device(rank % num_gpus)
-    dist.init_process_group(backend=backend, **kwargs)
+    rank = int(os.environ["LOCAL_RANK"])
+    if torch.accelerator.is_available():
+        device_type = torch.accelerator.current_accelerator()
+        device = torch.device(f"{device_type}:{rank}")
+        torch.accelerator.set_device_index(rank)
+    else:
+        device = torch.device("cpu")
+    dist.init_process_group(backend=backend, device_id=device, **kwargs)
 
 
 def _init_dist_slurm(backend, port=None):
@@ -39,8 +43,8 @@ def _init_dist_slurm(backend, port=None):
     proc_id = int(os.environ['SLURM_PROCID'])
     ntasks = int(os.environ['SLURM_NTASKS'])
     node_list = os.environ['SLURM_NODELIST']
-    num_gpus = torch.cuda.device_count()
-    torch.cuda.set_device(proc_id % num_gpus)
+    num_gpus = torch.accelerator.device_count()
+    torch.accelerator.set_device_index(proc_id % num_gpus)
     addr = subprocess.getoutput(f'scontrol show hostname {node_list} | head -n1')
     # specify master port
     if port is not None:
